@@ -1,10 +1,11 @@
 # Xain'd Sleena (Bootleg) (beta):
-![Xain'd Sleena](doc/Xaind-sleena-Flyer.jpg| width=640)
+![Xaind Sleena](/doc/Xaind-sleena-Flyer.jpg)
+
 
 Xain'd Sleena (ザインドスリーナ) is a two genre Platformer and side-scrolling arcade video game produced by Technos in 1986. It was licensed for release outside of Japan by Taito. In the USA, the game was published by Memetron, and the game was renamed to Solar Warrior. The European home computer ports renamed the game to Soldier of Light.
 
 ## Gameplay
-![Instructions](doc/xain_sleena_preview.JPG| width=320)
+![Instructions](/doc/xain_sleena_preview.JPG)
 
 The main character, Xain, is a galactic bounty-hunter who must defeat evil forces who oppress five different planets. The player can select any order to play the various planets, so, there is no 'official' sequence of play (For the U.S. version, this game was released as 'Solar Warrior'. This version goes through a set sequence instead of having to choose planets).
 
