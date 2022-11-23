@@ -9,7 +9,6 @@
 	<rbf>XSleenaCore</rbf>
 	<about author="RndMnkIII" twitter="@RndMnkIII"></about>
 	<resolution>15.62kHz</resolution>
-	<rotation>vertical (cw)</rotation>
 	<players>2</players>
 	<joystick>8-way</joystick>
 	<special_controls></special_controls>
@@ -33,7 +32,7 @@
 		<dip bits="14,15" name="Lives"         ids="3,4,6,Infinite (Cheat)" values="3,2,1,0"/>
 	</switches>
 
-	<rom index='0' md5="None" type='nonmerged' zip='xsleenab.zip'>
+	<rom index='0' md5="None" type='merged|nonmerged' zip='xsleena.zip|xsleenab.zip'>
 		<!-- board ID -->
 		<!-- Xain'd Sleena (bootleg) -->
 		<part>04</part>
