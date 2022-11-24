@@ -185,11 +185,8 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 //assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 //assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;  
 
-//assign VGA_SL = 0;
 assign VGA_F1 = 0;
 assign VGA_SCALER  = status[5];
-//assign VGA_DISABLE = 0;
-
 
 assign LED_DISK = 0;
 assign LED_POWER = 0;
@@ -198,13 +195,12 @@ assign BUTTONS = 0;
 //////////////////////////////////////////////////////////////////
 
 wire [1:0] ar = status[2:1];
-//wire [1:0] scandoubler_fx = status[4:3];
-wire [1:0] scandoubler_fx = 2'b00;
+wire [1:0] scandoubler_fx = status[4:3];
 wire orientation = ~status[10];
-wire pause_in_osd = status[25];
+wire pause_in_osd = status[8];
 wire system_pause;
 
-//assign VGA_SL = scandoubler_fx;
+//assign VGA_SL = scandoubler_fx; USED BY arcade_video
 assign HDMI_FREEZE = 0; //system_pause;
 wire NATIVE_VFREQ = status[9] == 1'd0;
 
@@ -225,19 +221,22 @@ localparam CONF_STR = {
 	"-;",
     "P1,Video Settings;",
     "P1O[2:1],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+	"P1O[4:3],Scandoubler Fx,None,CRT 25%,CRT 50%,CRT 75%;",
 	"P1O[5],VGA Scaler,Off,On;",
 	"P1O[6],Flip,Off,On;",
+	"P1O[7],Rotate CCW,Off,On;",
     "P1-;",
     "P1O[9],Video Timing,57.44Hz(Native),60Hz(Standard);",
     "P1O[10],Orientation,Horz,Vert;",
-	"P1O[7],Rotate CCW,Off,On;",
     "-;",
-    "O[25],OSD Pause,Off,On;",
+    "O[8],OSD Pause,Off,On;",
     "-;",
     "DIP;",
     "-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
+	"J1,Shot,Jump,Start P1,Coin,Start P2,Pause;",
+	"jn,A,B,Start,R,Select,L;",
 	"DEFMRA,/_Arcade/XSleenaBA.mra;",
 	"V,v",`BUILD_DATE 
 };
@@ -654,6 +653,46 @@ screen_rotate screen_rotate(.*);
 
 //////////////////////////////////////////////////////////////////
 
+
+///////////////////         Keyboard           //////////////////
+
+reg btn_up       = 0;
+reg btn_down     = 0;
+reg btn_left     = 0;
+reg btn_right    = 0;
+reg btn_1        = 0;
+reg btn_2        = 0;
+reg btn_coin1    = 0;
+reg btn_coin2    = 0;
+reg btn_1p_start = 0;
+reg btn_2p_start = 0;
+reg btn_pause    = 0;
+reg btn_service  = 0;
+
+wire pressed = ps2_key[9];
+wire [7:0] code = ps2_key[7:0];
+always @(posedge MS_CLK) begin
+	reg old_state;
+	old_state <= ps2_key[10];
+	if(old_state != ps2_key[10]) begin
+		case(code)
+			'h16: btn_1p_start <= pressed; // 1
+			'h1E: btn_2p_start <= pressed; // 2
+			'h2E: btn_coin1    <= pressed; // 5
+			'h36: btn_coin2    <= pressed; // 6
+			'h46: btn_service  <= pressed; // 9
+			'h4D: btn_pause    <= pressed; // P
+
+			'h75: btn_up      <= pressed; // up
+			'h72: btn_down    <= pressed; // down
+			'h6B: btn_left    <= pressed; // left
+			'h74: btn_right   <= pressed; // right
+			'h14: btn_1       <= pressed; // ctrl
+			'h11: btn_2       <= pressed; // alt
+		endcase
+	end
+end
+
 //////////////////////// GAME INPUTS ////////////////////////////
 //////// Game inputs, the same controls are used for two player alternate gameplay ////////
 //Dip Switches
@@ -687,10 +726,6 @@ wire m_right1;
 wire m_SW1_1;
 wire m_SW2_1;
 wire m_start1;
-wire m_coin1;
-wire m_service1;
-wire m_pause1; //active high
-wire m_alt_start2;
 
 //Player 2
 wire m_up2;
@@ -700,75 +735,49 @@ wire m_right2;
 wire m_SW1_2;
 wire m_SW2_2;
 wire m_start2;
-wire m_coin2;
-wire m_service2;
-wire m_pause2; //active high
-wire m_alt_start1;
+
+wire m_coin1, m_coin2;
+wire m_pause; //active high
 
 //Xain'd Sleena uses only one set of game controls and 2 start buttons that are needed for play a continue
 //wire [15:0] joy = joystick_0 | joystick_1;
 
-assign m_up1       = ~joystick_0[3];
-assign m_down1     = ~joystick_0[2];
-assign m_left1     = ~joystick_0[1];
-assign m_right1    = ~joystick_0[0];
-assign m_SW1_1     = ~joystick_0[4];  
-assign m_SW2_1     = ~joystick_0[5]; 
-assign m_start1    = ~joystick_0[6]; 
-assign m_coin1     = ~joystick_0[7];  
-assign m_service1  = ~joystick_0[8];
-assign m_pause1    =  joystick_0[9];
-assign m_alt_start2= ~joystick_0[10];
+assign m_up1       = ~btn_up    & ~joystick_0[3];
+assign m_down1     = ~btn_down  & ~joystick_0[2];
+assign m_left1     = ~btn_left  & ~joystick_0[1];
+assign m_right1    = ~btn_right & ~joystick_0[0];
+assign m_SW1_1     = ~btn_1     & ~joystick_0[4];  
+assign m_SW2_1     = ~btn_2     & ~joystick_0[5]; 
 
-assign m_up2       = ~joystick_1[3];
-assign m_down2     = ~joystick_1[2];
-assign m_left2     = ~joystick_1[1];
-assign m_right2    = ~joystick_1[0];
-assign m_SW1_2     = ~joystick_1[4];  
-assign m_SW2_2     = ~joystick_1[5]; 
-assign m_start2    = ~joystick_1[6]; 
-assign m_coin2     = ~joystick_1[7];  
-assign m_service2  = ~joystick_1[8];
-assign m_pause2    =  joystick_1[9];
-assign m_alt_start1= ~joystick_1[10];
-// assign m_up1       = ~joy[3];
-// assign m_down1     = ~joy[2];
-// assign m_left1     = ~joy[1];
-// assign m_right1    = ~joy[0];
-// assign m_SW1_1     = ~joy[4];  
-// assign m_SW2_1     = ~joy[5]; 
-// assign m_start1    = ~joy[6]; 
-// assign m_coin1     = ~joy[7];  
-// assign m_service1  = ~joy[8];
-// assign m_pause1    =  joy[9];
-// assign m_alt_start2= ~joy[10];
+assign m_up2       = ~btn_up    & ~joystick_1[3];
+assign m_down2     = ~btn_down  & ~joystick_1[2];
+assign m_left2     = ~btn_left  & ~joystick_1[1];
+assign m_right2    = ~btn_right & ~joystick_1[0];
+assign m_SW1_2     = ~btn_1     & ~joystick_1[4];  
+assign m_SW2_2     = ~btn_2     & ~joystick_1[5]; 
 
-// assign m_up2       = ~joy[3];
-// assign m_down2     = ~joy[2];
-// assign m_left2     = ~joy[1];
-// assign m_right2    = ~joy[0];
-// assign m_SW1_2     = ~joy[4];  
-// assign m_SW2_2     = ~joy[5]; 
-// assign m_start2    = ~joy[6]; 
-// assign m_coin2     = ~joy[7];  
-// assign m_service2  = ~joy[8];
-// assign m_pause2    =  joy[9];
-// assign m_alt_start1= ~joy[10];
+// 4     5      6      7       8     9
+//Shot,Jump,Start P1,Coin,Start P2,Pause
+assign m_start1    = ~btn_1p_start & ~joy[6]; 
+assign m_start2    = ~btn_2p_start & ~joy[8];
+assign m_coin1     = ~btn_coin1    & ~joystick_0[7];  
+assign m_coin2     = ~btn_coin2    & ~joystick_1[7];  
+assign m_pause     =  btn_pause    |  joy[9]; //active high
 
 logic [7:0] PLAYER1, PLAYER2;
 logic SERVICE;
 //All inputs are active low except SERVICE
 //               {2P,1P,1PSW2,1PSW1,1PD,1PU,1PL,1PR}              
-assign PLAYER1 = {(m_start2 & m_alt_start2),(m_start1 & m_alt_start1),m_SW2_1,m_SW1_1,m_down1,m_up1,m_left1,m_right1};
+assign PLAYER1 = {m_start2,m_start1,m_SW2_1,m_SW1_1,m_down1,m_up1,m_left1,m_right1};
 //               {COIN2,COIN1,2PSW2,2PSW1,2PD,2PU,2PL,2PR}             
 assign PLAYER2 = {m_coin2 ,m_coin1 ,m_SW2_2,m_SW1_2,m_down2,m_up2,m_left2,m_right2};
-assign SERVICE = m_service1 & m_service2;
+assign SERVICE = 1'b1; //Not used in game
 
 //PAUSE
 pause #(8,8,8,60) pause ( //R=G=B=8, 60MHz timing
  .clk_sys(MS_CLK),
  .reset(reset),
- .user_button((m_pause1 | m_pause2)),
+ .user_button((m_pause)),
  .pause_cpu(system_pause),
  .pause_request(0),
  .options({1'b0, pause_in_osd}),

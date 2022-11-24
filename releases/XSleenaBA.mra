@@ -125,5 +125,5 @@
 		</interleave>
 	</rom>
 	
-<buttons default="A,B,Start,Select,X,Y,L" names="Shot,Jump,Start,Coin,Service,Pause,AltStart"></buttons>
+<buttons default="A,B,Start,R,Select,L" names="Shot,Jump,Start P1,Coin,Start P2,Pause"></buttons>
 </misterromdescription>
