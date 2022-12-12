@@ -202,10 +202,10 @@ module XSleenaCore_BACK1 (
 	// ROMH: IC136,IC135,IC134,IC133
 	// ROML: IC114,IC113,IC112,IC111
 	//*** START OF BACK1 ROM address request generator ***
-	logic [24:0] req_ROM_addr;
-	logic ROM_req;
-	logic ROM_data_rdy;
-	logic [15:0] ROM_data;
+	// logic [24:0] req_ROM_addr;
+	// logic ROM_req;
+	// logic ROM_data_rdy;
+	// logic [15:0] ROM_data;
 	logic [7:0] ROMH, ROML;
 
 	logic last_HCLKn;
@@ -216,45 +216,45 @@ module XSleenaCore_BACK1 (
 
 	always_ff @(posedge clk_ram) begin
 		last_HCLKn <= HCLKn;
-		ROM_req<= 1'b0;
+		sdr_req<= 1'b0;
 
 		if(last_HCLKn && !HCLKn) begin//detect falling edge
 			last_ROM13_addr <= curr_ROM13_addr;
 
 			//Dont make address request while the system is resetting
 			if(!RESETn) begin
-				req_ROM_addr <= REGION_ROM_BACK1.base_addr[24:0] | 17'h0;
-				ROM_req <= 1'b0;
+				sdr_addr <= REGION_ROM_BACK1.base_addr[24:0] | 17'h0;
+				sdr_req <= 1'b0;
 			end
 			//ignore address changes based on B1VP
 			else if (last_ROM13_addr != curr_ROM13_addr) begin
-				req_ROM_addr <= REGION_ROM_BACK1.base_addr[24:0] | {curr_ROM13_addr,B1VP[3:0],1'b0};
-				ROM_req <= 1'b1;
+				sdr_addr <= REGION_ROM_BACK1.base_addr[24:0] | {curr_ROM13_addr,B1VP[3:0],1'b0};
+				sdr_req <= 1'b1;
 			end
 		end
 	end
 
 	always_ff @(posedge clk_ram) begin
-		if(ROM_data_rdy) begin
-			ROMH <= ROM_data[15:8];
-			ROML <= ROM_data[7:0];
+		if(sdr_rdy) begin
+			ROMH <= sdr_data[15:8];
+			ROML <= sdr_data[7:0];
 		end
 	end
 
-	sdr_req_manager_single back1_sdr_req_man(
-		.clk(clk_ram),
-		.clk_ram(clk_ram),
+	// sdr_req_manager_single back1_sdr_req_man(
+	// 	.clk(clk_ram),
+	// 	.clk_ram(clk_ram),
 
-		.rom_addr(req_ROM_addr),
-		.rom_data(ROM_data),
-		.rom_req(ROM_req),
-		.rom_rdy(ROM_data_rdy),
+	// 	.rom_addr(req_ROM_addr),
+	// 	.rom_data(ROM_data),
+	// 	.rom_req(ROM_req),
+	// 	.rom_rdy(ROM_data_rdy),
 
-		.sdr_addr(sdr_addr),
-		.sdr_data(sdr_data),
-		.sdr_req(sdr_req),
-		.sdr_rdy(sdr_rdy)
-	);
+	// 	.sdr_addr(sdr_addr),
+	// 	.sdr_data(sdr_data),
+	// 	.sdr_req(sdr_req),
+	// 	.sdr_rdy(sdr_rdy)
+	// );
 	//*** END OF BACK1 ROM address request generator ***
 
 	logic ic61a,ic61b,ic61c; //XOR gate

@@ -19,8 +19,11 @@
 `default_nettype none
 `timescale 1ns/10ps
 
+import xain_pkg::*;
+
 module XSleenaCore_cpuA_B (
 	input wire clk, //48MHz
+	input wire clk_ram, //96MHz
 	input wire clk12M_cen,
   	input wire RSTn,
 	input wire VBLK,
@@ -36,7 +39,7 @@ module XSleenaCore_cpuA_B (
 	input wire HCLK, //clock
 	input wire BSL, //ROM BANK Switch in 0x4000-0x7fff CPU address space
 	//outputs
-	output logic [14:0] AB, //maincpu address bus, range: 0x000-0x7fff
+	output logic [15:0] AB, //maincpu address bus, range: 0x000-0x7fff
 	output logic RW, //maincpu RW
 	input wire [7:0] DB_in,
 	output logic [7:0] DB_out,
@@ -47,11 +50,17 @@ module XSleenaCore_cpuA_B (
 	output logic IOn,
 	output logic PLSELn,
 	output logic WDn,
-	//ROM interface
-    input bram_wr,
-    input [7:0] bram_data,
-    input [19:0] bram_addr,
-    input [1:0] bram_cs,
+	
+	//SDRAM ROM interface
+	output logic [24:0] sdr_addr_a,
+	output logic sdr_req_a,
+	input wire sdr_rdy_a,
+	input wire [15:0] sdr_data_a,	
+
+	output logic [24:0] sdr_addr_b,
+	output logic sdr_req_b,
+	input wire sdr_rdy_b,
+	input wire [15:0] sdr_data_b,
 	input wire pause_rq
 );
 //  -----------------------------------------------------------------------------------------------------------------------------------------------
@@ -203,6 +212,14 @@ module XSleenaCore_cpuA_B (
 		clkQf_cen = clkQ_prev && !ic87B_Q;
 	end
 	
+	//The BS,BA status registers are needed to check
+	//when the cpu is in reset acknowledge state:
+	//addr = fffe or ffff BS=H, BA=L
+	//normally BS=BA=L
+	logic main_BS, main_BA;
+	logic main_BSr=0;
+	logic main_BAr=0;
+	logic BSLr=0;
 	mc6809is ic89(
 		.CLK(clk),
         .fallE_en(clkEf_cen),
@@ -211,8 +228,8 @@ module XSleenaCore_cpuA_B (
 		.DOut(maincpu_Dout),
 		.ADDR(maincpu_A),
 		.RnW(maincpu_RW),
-		.BS(),
-		.BA(),
+		.BS(main_BS),
+		.BA(main_BA),
 		.nIRQ(ic100B_Qn),
 		.nFIRQ(ic87A_Qn),
 		.nNMI(ic100A_Qn),
@@ -230,6 +247,9 @@ module XSleenaCore_cpuA_B (
 	always_ff @(posedge clk) begin
 		AB[14:0] <= maincpu_A[14:0];
 		RW       <= maincpu_RW;
+		main_BSr <= main_BS;
+		main_BAr <= main_BA;
+		BSLr     <= BSL;
 	end
 
 	logic ic75d; //OR gate
@@ -240,65 +260,119 @@ module XSleenaCore_cpuA_B (
 
 	logic ic76b; //NOT gate
 	assign ic76b = ~RW;
+   //assign ic76b = ~maincpu_RW;
 
 
 	logic ic86c; //NAND gate
-	assign ic86c = ~(ic76a & AB[14]);
+ 	assign ic86c = ~(ic76a & AB[14]);
+   //assign ic86c = ~(ic76a & maincpu_A[14]);
 
 	//--- Intel P27256 32Kx8 CPUA ROMS 250ns ---
-	logic [7:0] ic66_ROM_Dout;
-	// ROM_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15), .DATA_HEX_FILE("xs87b-10.7d_vmem.txt")) ic66 (
-	// 	ROM_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15), .DATA_HEX_FILE("1.rom_vmem.txt")) ic66 (
-	// 	.clk(clk),
-	// 	.Cen(1'b1), //the CEn and OEn logic is applied in the CPU data bus multiplexer, active high
-	// 	.ADDR(maincpu_A[14:0]), 
-	// 	.DATA(ic66_ROM_Dout)
-	// );
-	//PORT0: ROM load interface
-	//PORT1: normal ROM access interface
-	SRAM_dual_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15)) ic66(
-		.clk0(clk),
-		.clk1(clk),
-		.ADDR0(bram_addr[14:0]),
-		.ADDR1(maincpu_A[14:0]),
-		.DATA0(bram_data),
-		.DATA1(8'h00),
-		.cen0(bram_cs[0] & ~bram_addr[15]), //lower 32Kb
-		.cen1(1'b1),
-		.we0(bram_wr),
-		.we1(1'b0),
-		.Q0(),
-		.Q1(ic66_ROM_Dout)
-	);
+	//*** Start of ROM request logic, for 16bit wide SDRAM access ***
+	logic [15:0] maincpu_ROM_Dout;
+	logic [7:0] maincpu_ROM_Byte_Dout;
+	logic [15:0] last_maddr_a;
+	logic last_bsl_a=1'b0;
+	logic [15:0] req_rom_addr_a; //128Kb space
+	logic [15:0] last_req_rom_addr_a; //128Kb space
+	logic maddr_ffff_a;
+	logic dummy_ffff_a;
+	logic rom_addr_a;
 
-	logic [7:0] ic65_ROM_Dout;
-	// ROM_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15), .DATA_HEX_FILE("xs87b-11.7c_vmem.txt")) ic65 (
-	// 	ROM_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15), .DATA_HEX_FILE("pa-0.ic65_vmem.txt")) ic65 (
-	// 	.clk(clk),
-	// 	.Cen(1'b1), //the CEn and OEn logic is applied in the CPU data bus multiplexer, active high
-	// 	.ADDR({BSL,maincpu_A[13:0]}), 
-	// 	.DATA(ic65_ROM_Dout)
-	// );
-	SRAM_dual_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15)) ic65(
-		.clk0(clk),
-		.clk1(clk),
-		.ADDR0(bram_addr[14:0]),
-		.ADDR1({BSL,maincpu_A[13:0]}),
-		.DATA0(bram_data),
-		.DATA1(8'h00),
-		.cen0(bram_cs[0] & bram_addr[15]), //upper 32Kb
-		.cen1(1'b1),
-		.we0(bram_wr),
-		.we1(1'b0),
-		.Q0(),
-		.Q1(ic65_ROM_Dout)
-	);
+	//Debug: counter # of cycles between rom_req and sdr_rdy
+	(* noprune *) logic [7:0] sdr_req_cnt;
+
+	assign maddr_ffff_a = &(maincpu_A);
+	assign dummy_ffff_a = maddr_ffff_a && !main_BA && !main_BS;
+	assign rom_addr_a = |(maincpu_A[15:14]);
+
+	//Detect if there is any change on req_rom_addr ignoring LSB of the address (16bit data wide)
+	assign sdr_req_a = |(req_rom_addr_a[15:1] ^ last_req_rom_addr_a[15:1]);
+	always_ff @(posedge clk_ram) begin
+		if(!RSTn) begin
+			last_maddr_a        <= 16'h0000;
+			req_rom_addr_a      <= 16'h0000;
+			last_req_rom_addr_a <= 16'h0000;
+		end
+		else
+		begin
+			last_maddr_a <= maincpu_A[15:0];
+			last_bsl_a <= BSL;
+			last_req_rom_addr_a <= req_rom_addr_a;
+
+			if (({BSL,maincpu_A[15:0]} != {last_bsl_a,last_maddr_a}) && !dummy_ffff_a && maincpu_RW && rom_addr_a) begin
+				req_rom_addr_a <= maincpu_A[15] ? {1'b0,maincpu_A[14:0]} : {1'b1,BSL,maincpu_A[13:0]};	
+			end
+		end
+	end
+
+	//debug state machine
+	(* noprune *) logic [7:0] max_cnt_val=8'd0;
+	(* noprune *) logic [7:0] min_cnt_val=8'd255;
+
+	parameter SDR_REQ_CNT_HLD = 3'b001, SDR_REQ_CNT_RST = 3'b010, SDR_REQ_CNT_INC = 3'b100;
+	logic [2:0] state, next_state;
+
+	always_comb begin
+		next_state = 3'b000;
+		case(state)
+			SDR_REQ_CNT_HLD: 
+				if(sdr_req_a) next_state = SDR_REQ_CNT_RST;
+				else next_state = SDR_REQ_CNT_HLD;
+			SDR_REQ_CNT_RST:
+				next_state = SDR_REQ_CNT_INC;
+			SDR_REQ_CNT_INC:
+				if (sdr_rdy_a) next_state = SDR_REQ_CNT_HLD;
+				else next_state = SDR_REQ_CNT_INC;
+		endcase
+	end
+
+	always_ff @(posedge clk_ram) begin
+		if (!RSTn) state <= SDR_REQ_CNT_HLD;
+		else 	   state <= next_state;
+	end
+
+	always_ff @(posedge clk_ram) begin
+		if(!RSTn) begin
+			sdr_req_cnt <= 8'd0;
+			max_cnt_val <= 8'd0;
+			min_cnt_val <= 8'd255;
+		end
+		else begin
+			case (state)
+				SDR_REQ_CNT_HLD: 
+					sdr_req_cnt <= sdr_req_cnt;
+				SDR_REQ_CNT_RST: begin
+					sdr_req_cnt <= 8'd0;
+					if(sdr_req_cnt > max_cnt_val) max_cnt_val <= sdr_req_cnt;
+					if(sdr_req_cnt < min_cnt_val) min_cnt_val <= sdr_req_cnt;
+				end
+				SDR_REQ_CNT_INC:
+					sdr_req_cnt <= sdr_req_cnt + 8'd1;
+				default:
+					sdr_req_cnt <= sdr_req_cnt;
+			endcase
+		end
+	end
+	//end of //debug state machine
+
+	//*** End of ROM request logic ***
+	assign sdr_addr_a = REGION_MAIN_CPU_ROM.base_addr[24:0] | req_rom_addr_a; //64Kb ROM
+	
+	always_ff @(posedge clk_ram) begin
+		if(sdr_rdy_a) begin
+			maincpu_ROM_Dout <= sdr_data_a;
+		end
+	end
+	//Select the byte from SDRAM word, this optimize the number of SDRAM accesses required
+	//Byte ordering: adjust for Big Endian
+	assign maincpu_ROM_Byte_Dout = req_rom_addr_a[0] ? maincpu_ROM_Dout[15:8] : maincpu_ROM_Dout[7:0];
 
 //--- FPGA Synthesizable unidirectinal data bus MUX, replaces ic88 tri-state logic ---
 	//main CPU data input
     always_ff @(posedge clk) begin
-        if(!ic86c && !ic76b)              maincpu_Din <= ic65_ROM_Dout;
-        else if(!ic76a && !ic76b)         maincpu_Din <= ic66_ROM_Dout; 
+        if(!ic86c && !ic76b)            maincpu_Din <= maincpu_ROM_Byte_Dout;
+        else if(!ic76a && !ic76b)       maincpu_Din <= maincpu_ROM_Byte_Dout; 
 		else if(!ic75d)                   maincpu_Din <= MAINCPU_EXT_Din;
 		else                              maincpu_Din <= 8'hFF;             
     end
@@ -386,6 +460,9 @@ module XSleenaCore_cpuA_B (
 		clkQf_cen2 = clkQ_prev2 && !Q2;
 	end
 	
+	logic sub_BS, sub_BA;
+	logic sub_BSr=0;
+	logic sub_BAr=0;
 	mc6809is ic30(
 		.CLK(clk),
         .fallE_en(clkEf_cen2),
@@ -394,8 +471,8 @@ module XSleenaCore_cpuA_B (
 		.DOut(subcpu_Dout),
 		.ADDR(subcpu_A),
 		.RnW(subcpu_RW),
-		.BS(),
-		.BA(),
+		.BS(sub_BS),
+		.BA(sub_BA),
 		.nIRQ(ic17a_Qn),
 		.nFIRQ(1'b1),
 		.nNMI(1'b1),
@@ -458,53 +535,106 @@ module XSleenaCore_cpuA_B (
 
 	logic ic56a_Q; //sub CPU ROM bank switch
 	//--- Intel P27256 32Kx8 CPUA ROMS 250ns ---
-    // ROM_async #(.ADDR_WIDTH(0), .DELAY(80), .DATA_HEX_FILE("p1-0.ic29_vmem.txt")) ic29 (.ADDR(subcpu_A[14:0]), .CEn(ic57c), .OEn(1'b0), .DATA(subcpu_D)); //this replaces Solar Warrior IC29
-	logic [7:0] ic29_ROM_Dout;
-	// ROM_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15), .DATA_HEX_FILE("p1-0.ic29_vmem.txt")) ic29 (
-	// 	.clk(clk),
-	// 	.Cen(1'b1), //the CEn and OEn logic is applied in the CPU data bus multiplexer selector, active high
-	// 	.ADDR(subcpu_A[14:0]), 
-	// 	.DATA(ic29_ROM_Dout)
-	// );
-	//PORT0: ROM load interface
-	//PORT1: normal ROM access interface
-	SRAM_dual_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15)) ic29(
-		.clk0(clk),
-		.clk1(clk),
-		.ADDR0(bram_addr[14:0]),
-		.ADDR1(subcpu_A[14:0]),
-		.DATA0(bram_data),
-		.DATA1(8'h00),
-		.cen0(bram_cs[1] & ~bram_addr[15]), //lower 32Kb
-		.cen1(1'b1),
-		.we0(bram_wr),
-		.we1(1'b0),
-		.Q0(),
-		.Q1(ic29_ROM_Dout)
-	);
 
-    // ROM_async #(.ADDR_WIDTH(0), .DELAY(80), .DATA_HEX_FILE("p0-0.ic15_vmem.txt")) ic15 (.ADDR({ic56a_Q,subcpu_A[13:0]}), .CEn(ic36d), .OEn(1'b0), .DATA(subcpu_D)); //this replaces Solar Warrior IC15
-	logic [7:0] ic15_ROM_Dout;
-	// ROM_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15), .DATA_HEX_FILE("p0-0.ic15_vmem.txt")) ic15 (
-	// 	.clk(clk),
-	// 	.Cen(1'b1), //the CEn and OEn logic is applied in the CPU data bus multiplexer selector, active high
-	// 	.ADDR({ic56a_Q,subcpu_A[13:0]}), 
-	// 	.DATA(ic15_ROM_Dout)
-	// );
-	SRAM_dual_sync #(.DATA_WIDTH(8), .ADDR_WIDTH(15)) ic15(
-		.clk0(clk),
-		.clk1(clk),
-		.ADDR0(bram_addr[14:0]),
-		.ADDR1({ic56a_Q,subcpu_A[13:0]}),
-		.DATA0(bram_data),
-		.DATA1(8'h00),
-		.cen0(bram_cs[1] & bram_addr[15]), //upper 32Kb
-		.cen1(1'b1),
-		.we0(bram_wr),
-		.we1(1'b0),
-		.Q0(),
-		.Q1(ic15_ROM_Dout)
-	);
+	//*** Start of ROM request logic, for 16bit wide SDRAM access ***
+	logic [15:0] subcpu_ROM_Dout;
+	logic [7:0] subcpu_ROM_Byte_Dout;
+	logic [15:0] last_maddr_b;
+	logic last_bsl_b=1'b0;
+	logic [15:0] req_rom_addr_b; //128Kb space
+	logic [15:0] last_req_rom_addr_b; //128Kb space
+	logic maddr_ffff_b;
+	logic dummy_ffff_b;
+	logic rom_addr_b;
+
+	//Debug: counter # of cycles between rom_req and sdr_rdy
+	(* noprune *) logic [7:0] sdr_req_cnt_b;
+
+	assign maddr_ffff_b = &(subcpu_A);
+	assign dummy_ffff_b = maddr_ffff_b && !sub_BA && !sub_BS;
+	assign rom_addr_b = |(subcpu_A[15:14]);
+
+	//Detect if there is any change on req_rom_addr ignoring LSB of the address (16bit data wide)
+	assign sdr_req_b = |(req_rom_addr_b[15:1] ^ last_req_rom_addr_b[15:1]);
+	always_ff @(posedge clk_ram) begin
+		if(!RSTn) begin
+			last_maddr_b        <= 16'h0000;
+			req_rom_addr_b      <= 16'h0000;
+			last_req_rom_addr_b <= 16'h0000;
+		end
+		else
+		begin
+			last_maddr_b <= subcpu_A[15:0];
+			last_bsl_b <= ic56a_Q;
+			last_req_rom_addr_b <= req_rom_addr_b;
+
+			if (({ic56a_Q,subcpu_A[15:0]} != {last_bsl_b,last_maddr_b}) && !dummy_ffff_b && subcpu_RW && rom_addr_b) begin
+				req_rom_addr_b <= subcpu_A[15] ? {1'b0,subcpu_A[14:0]} : {1'b1,ic56a_Q,subcpu_A[13:0]};	
+			end
+		end
+	end
+
+	//debug state machine
+	(* noprune *) logic [7:0] max_cnt_val_b=8'd0;
+	(* noprune *) logic [7:0] min_cnt_val_b=8'd255;
+
+	//parameter SDR_REQ_CNT_HLD = 3'b001, SDR_REQ_CNT_RST = 3'b010, SDR_REQ_CNT_INC = 3'b100;
+	logic [2:0] state_b, next_state_b;
+
+	always_comb begin
+		next_state_b = 3'b000;
+		case(state_b)
+			SDR_REQ_CNT_HLD: 
+				if(sdr_req_b) next_state_b = SDR_REQ_CNT_RST;
+				else next_state_b = SDR_REQ_CNT_HLD;
+			SDR_REQ_CNT_RST:
+				next_state_b = SDR_REQ_CNT_INC;
+			SDR_REQ_CNT_INC:
+				if (sdr_rdy_b) next_state_b = SDR_REQ_CNT_HLD;
+				else next_state_b = SDR_REQ_CNT_INC;
+		endcase
+	end
+
+	always_ff @(posedge clk_ram) begin
+		if (!RSTn) state_b <= SDR_REQ_CNT_HLD;
+		else 	   state_b <= next_state_b;
+	end
+
+	always_ff @(posedge clk_ram) begin
+		if(!RSTn) begin
+			sdr_req_cnt_b <= 8'd0;
+			max_cnt_val_b <= 8'd0;
+			min_cnt_val_b <= 8'd255;
+		end
+		else begin
+			case (state_b)
+				SDR_REQ_CNT_HLD: 
+					sdr_req_cnt_b <= sdr_req_cnt_b;
+				SDR_REQ_CNT_RST: begin
+					sdr_req_cnt_b <= 8'd0;
+					if(sdr_req_cnt_b > max_cnt_val_b) max_cnt_val_b <= sdr_req_cnt_b;
+					if(sdr_req_cnt_b < min_cnt_val_b) min_cnt_val_b <= sdr_req_cnt_b;
+				end
+				SDR_REQ_CNT_INC:
+					sdr_req_cnt_b <= sdr_req_cnt_b + 8'd1;
+				default:
+					sdr_req_cnt_b <= sdr_req_cnt_b;
+			endcase
+		end
+	end
+	//end of //debug state machine
+
+	//*** End of ROM request logic ***
+	assign sdr_addr_b = REGION_SUB_CPU_ROM.base_addr[24:0] | req_rom_addr_b; //64Kb ROM
+	
+	always_ff @(posedge clk_ram) begin
+		if(sdr_rdy_b) begin
+			subcpu_ROM_Dout <= sdr_data_b;
+		end
+	end
+	//Select the byte from SDRAM word, this optimize the number of SDRAM accesses required
+	//Byte ordering: adjust for Big Endian
+	assign subcpu_ROM_Byte_Dout = req_rom_addr_b[0] ? subcpu_ROM_Dout[15:8] : subcpu_ROM_Dout[7:0];
 
 	logic [7:0] ic58_Y; //3-8 Decoder
 	ttl_74138 #(.WIDTH_OUT(8), .DELAY_RISE(0), .DELAY_FALL(0)) ic58
@@ -525,8 +655,8 @@ module XSleenaCore_cpuA_B (
 //--- FPGA Synthesizable unidirectinal data bus MUX, replaces ic88 tri-state logic ---
 	//sub CPU data input
     always_ff @(posedge clk) begin
-        if     (!ic36d)              subcpu_Din <= ic15_ROM_Dout;
-        else if(!ic57c)              subcpu_Din <= ic29_ROM_Dout; 
+        if     (!ic36d)              subcpu_Din <= subcpu_ROM_Byte_Dout; //ic15_ROM_Dout;
+        else if(!ic57c)              subcpu_Din <= subcpu_ROM_Byte_Dout; //ic29_ROM_Dout; 
 		else                         subcpu_Din <= SUBCPU_EXT_Din;           
     end
 

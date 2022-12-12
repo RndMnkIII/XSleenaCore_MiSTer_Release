@@ -29,7 +29,10 @@ module XSleenaCore_MAP (
     input bram_wr,
     input [7:0] bram_data,
     input [19:0] bram_addr,
-    input bram_cs
+    input bram_cs,
+
+	//Greetings screen shog
+	input show_kofi
 );
 
 	logic [3:0] ic25_Y;
@@ -53,18 +56,30 @@ module XSleenaCore_MAP (
 	logic ic16a; //OR gate
 	assign ic16a = (M1Hn | MAPSELn); //this selector enables MAP tilemap SRAM input/output external data bus
 
-	logic [7:0] SRAM_Din, SRAM_Dout;
+	logic [7:0] SRAM_Din, SRAM_Dout, SRAM_Dout1, SRAM_Dout2;
 
 	//--- SONY CXK5816P-10 2Kx8 100ns SRAM ---
 	// SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(11), .DATA_HEX_FILE("xs_jungle_map.bin_vmem.txt")) ic23(
-		SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(11), .DATA_HEX_FILE("xs_desert_map.bin_vmem.txt")) ic23(
+	SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(11), .DATA_HEX_FILE("rnd2K.bin_vmem.txt")) ic23(
 		.clk(clk),
 		.ADDR({ic39_Y[2:0],ic22_Y[3:0],ic25_Y[3:0]}),
 		.DATA(SRAM_Din),
 		.cen(1'b1), //active high
 		.we(~ic39_Y[3]), //active high
-		.Q(SRAM_Dout)
+		.Q(SRAM_Dout1)
     );
+
+	SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(11), .DATA_HEX_FILE("rnd2K.bin_vmem.txt")) ic23_greets(
+		.clk(clk),
+		.ADDR({ic39_Y[2:0],ic22_Y[3:0],ic25_Y[3:0]}),
+		.DATA(8'h00),
+		.cen(1'b1), //active high
+		.we(1'b0), //active high
+		.Q(SRAM_Dout2)
+    );
+
+	assign SRAM_Dout = (show_kofi) ? SRAM_Dout2 : SRAM_Dout1;
+
 //--- FPGA Synthesizable unidirectinal data bus MUX, replaces ic7 tri-state logic ---
 // This replaces TTL logic LS245 ICs: ic7
 // Adds one master clock period delay

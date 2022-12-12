@@ -5,6 +5,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE Arcade-XSleenaCore.sv
 set_global_assignment -name QIP_FILE rtl/pll.qip
 set_global_assignment -name VERILOG_FILE rtl/jtframe_resync.v
 set_global_assignment -name VERILOG_FILE rtl/pause.v
+set_global_assignment -name VERILOG_FILE rtl/joy_db15.v
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdr_req_manager_single.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/sdr_req_manager.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/XSleenaCore.sv

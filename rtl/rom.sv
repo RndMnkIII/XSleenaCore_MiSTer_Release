@@ -1,6 +1,6 @@
 //============================================================================
-//  Irem M72 for MiSTer FPGA - ROM loading
-//
+//  @RndMnkIII. 11/2022.
+//  Based on Irem M72 for MiSTer FPGA - ROM loading
 //  Copyright (C) 2022 Martin Donlon
 //
 //  This program is free software; you can redistribute it and/or modify it
@@ -45,7 +45,7 @@ module rom_loader
 );
 
 reg [24:0] base_addr;
-//reg reorder_64;
+reg reorder_16;
 reg [24:0] offset;
 reg [23:0] size;
 
@@ -85,6 +85,7 @@ always @(posedge sys_clk) begin
         SIZE_2: begin
             size[7:0] <= ioctl_data;
             base_addr <= LOAD_REGIONS[region].base_addr;
+            reorder_16 <= LOAD_REGIONS[region].reorder_16;
             bram_cs <= LOAD_REGIONS[region].bram_cs;
             offset <= 25'd0;
 
@@ -96,6 +97,9 @@ always @(posedge sys_clk) begin
                 stage <= SDR_DATA;
         end
         SDR_DATA: begin
+            if (reorder_16)
+                sdr_addr <= base_addr[24:0] + {offset[24:5], offset[2:0], offset[4:3]};
+            else
             sdr_addr <= base_addr[24:0] + offset[24:0];
             
             sdr_data = {ioctl_data, ioctl_data};

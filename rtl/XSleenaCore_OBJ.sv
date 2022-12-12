@@ -382,10 +382,10 @@ module XSleenaCore_OBJ (
 	//---------- ROM SECTION ------------
 	//--- Intel P27256 32Kx8 MAP ROM 250ns ---
 	//*** START OF OBJ ROM address request generator ***
-	logic [24:0] req_ROM_addr;
-	logic ROM_req;
-	logic ROM_data_rdy;
-	logic [15:0] ROM_data;
+	// logic [24:0] req_ROM_addr;
+	// logic ROM_req;
+	// logic ROM_data_rdy;
+	// logic [15:0] ROM_data;
 	logic [7:0] ROMH, ROML;
 
 	logic last_HCLKn;
@@ -396,38 +396,37 @@ module XSleenaCore_OBJ (
 
 	always_ff @(posedge clk_ram) begin
 		last_HCLKn <= HCLKn;
-		ROM_req<= 1'b0;
+		sdr_req <= 1'b0;
 		if(last_HCLKn && !HCLKn) begin//detect falling edge
 			last_ROM_addr <= curr_ROM_addr;
 			if (last_ROM_addr != curr_ROM_addr) begin
-				req_ROM_addr <=  REGION_ROM_OBJ.base_addr[24:0] | {curr_ROM_addr,1'b0};
-				ROM_req <= 1'b1;
+				sdr_addr <=  REGION_ROM_OBJ.base_addr[24:0] | {curr_ROM_addr,1'b0};
+				sdr_req <= 1'b1;
 			end
 		end
 	end
 
 	always_ff @(posedge clk_ram) begin
-		if(ROM_data_rdy) begin
-			ROMH <= ROM_data[15:8];
-			ROML <= ROM_data[7:0];
+		if(sdr_rdy) begin
+			ROMH <= sdr_data[15:8];
+			ROML <= sdr_data[7:0];
 		end
 	end
 
-	sdr_req_manager_single obj_sdr_req_man(
-		.clk(clk_ram),
-		.clk_ram(clk_ram),
+	// sdr_req_manager_single obj_sdr_req_man(
+	// 	.clk(clk_ram),
+	// 	.clk_ram(clk_ram),
 
-		.rom_addr(req_ROM_addr),
-		.rom_data(ROM_data),
-		.rom_req(ROM_req),
-		.rom_rdy(ROM_data_rdy),
+	// 	.rom_addr(req_ROM_addr),
+	// 	.rom_data(ROM_data),
+	// 	.rom_req(ROM_req),
+	// 	.rom_rdy(ROM_data_rdy),
 
-		.sdr_addr(sdr_addr),
-		.sdr_data(sdr_data),
-		.sdr_req(sdr_req),
-		.sdr_rdy(sdr_rdy)
-	);
-
+	// 	.sdr_addr(sdr_addr),
+	// 	.sdr_data(sdr_data),
+	// 	.sdr_req(sdr_req),
+	// 	.sdr_rdy(sdr_rdy)
+	// );
 	//*** END OF OBJ ROM address request generator ***
 
 	logic [1:0] ic148_Y;

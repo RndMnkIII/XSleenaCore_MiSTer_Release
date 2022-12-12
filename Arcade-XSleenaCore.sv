@@ -179,7 +179,7 @@ module emu
 ///////// Default values for ports not used in this core /////////
 
 assign ADC_BUS  = 'Z;
-assign USER_OUT = '1;
+//assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 //assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
@@ -228,8 +228,15 @@ localparam CONF_STR = {
     "P1-;",
     "P1O[9],Video Timing,57.44Hz(Native),60Hz(Standard);",
     "P1O[10],Orientation,Horz,Vert;",
-    "-;",
     "O[8],OSD Pause,Off,On;",
+    "-;",
+	"P2,SNAC;",
+	"P2O[23:22],DB15 Devices,Off,OnlyP1,OnlyP2,P1&P2;",
+	"-;",
+    "P3,SDRAM Debug;",
+    "P3O[19],Request BACK1,On,Off;",
+	"P3O[20],Request BACK2,On,Off;",
+	"P3O[21],Request OBJ,On,Off;",
     "-;",
     "DIP;",
     "-;",
@@ -240,6 +247,10 @@ localparam CONF_STR = {
 	"DEFMRA,/_Arcade/XSleenaBA.mra;",
 	"V,v",`BUILD_DATE 
 };
+
+
+//debug SDRAM interface
+wire [2:0] DBG_SDR_REQ = status[21:19];
 
 wire forced_scandoubler;
 wire   [1:0] buttons;
@@ -256,7 +267,6 @@ wire  [7:0] ioctl_din = 0;
 wire        ioctl_wait;
 
 wire [15:0] joystick_0, joystick_1;
-wire [15:0] joy = joystick_0 | joystick_1;
 
 hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
@@ -272,7 +282,6 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
     .buttons(buttons),
     .status(status),
-    // .status_menumask({crop_240p, allow_crop_240p, direct_video}),
 
     .ioctl_download(ioctl_download),
     .ioctl_upload(ioctl_upload),
@@ -321,15 +330,21 @@ wire reset = RESET | status[0] | buttons[1] | ioctl_download;
 
 wire MS_CLK, SDR_CLK, SDR_PS_CLK;
 
-//////////////////////////////////////////////////////////////////
-
 ///////////////////////////////////////////////////////////////////////
 // SDRAM
 ///////////////////////////////////////////////////////////////////////
-
+//CH0 -> MAINCPU
 //CH1 -> SPRITES
 //CH2 -> BG1
 //CH3 -> BG2/ROM LOADING INTERFACE
+wire [15:0] sdr_mcpu_dout;
+wire [24:0] sdr_mcpu_addr;
+wire sdr_mcpu_req, sdr_mcpu_rdy;
+
+wire [15:0] sdr_scpu_dout;
+wire [24:0] sdr_scpu_addr;
+wire sdr_scpu_req, sdr_scpu_rdy;
+
 wire [15:0] sdr_obj_dout;
 wire [24:0] sdr_obj_addr;
 wire sdr_obj_req, sdr_obj_rdy;
@@ -338,11 +353,13 @@ wire [15:0] sdr_bg1_dout;
 wire [24:0] sdr_bg1_addr;
 wire sdr_bg1_req, sdr_bg1_rdy;
 
-// wire [15:0] sdr_cpu_dout, sdr_cpu_din;
 wire [15:0] sdr_bg2_dout;
 wire [24:0] sdr_bg2_addr;
 wire sdr_bg2_req;
-//wire [1:0] sdr_cpu_wr_sel;
+
+// wire [15:0] sdr_map_dout;
+// wire [24:0] sdr_map_addr;
+// wire sdr_map_req,  sdr_map_rdy;
 
 reg [24:0] sdr_rom_addr;
 reg [15:0] sdr_rom_data;
@@ -358,7 +375,7 @@ wire [15:0] sdr_ch3_din = sdr_rom_data;
 wire [1:0] sdr_ch3_be = sdr_rom_be;
 // wire sdr_ch3_rnw = sdr_rom_write ? 1'b0 : ~{|sdr_cpu_wr_sel};
 wire sdr_ch3_rnw = sdr_rom_write ? 1'b0 : 1'b1; //or ROM downloading or SDRAM ROM read
-wire sdr_ch3_req = sdr_rom_write ? sdr_rom_req : sdr_bg2_req;
+wire sdr_ch3_req = sdr_rom_write ? sdr_rom_req : sdr_bg2_req & ~DBG_SDR_REQ[1];
 wire sdr_ch3_rdy;
 wire sdr_bg2_rdy = sdr_ch3_rdy;
 wire sdr_rom_rdy = sdr_ch3_rdy;
@@ -376,25 +393,34 @@ sdram sdram
     .doRefresh(0),
     .init(~pll_locked),
     .clk(SDR_CLK),
+    
+    .ch0a_addr(sdr_mcpu_addr[24:1]),//cpu_addr[16:0] 64Kb Main CPU + 64Kb Sub CPU
+    .ch0a_dout(sdr_mcpu_dout),
+    .ch0a_req(sdr_mcpu_req),
+    .ch0a_ready(sdr_mcpu_rdy),
 
-    .ch1_addr(sdr_obj_addr[24:1]),
+    .ch0b_addr(sdr_scpu_addr[24:1]),//cpu_addr[16:0] 64Kb Main CPU + 64Kb Sub CPU
+    .ch0b_dout(sdr_scpu_dout),
+    .ch0b_req(sdr_scpu_req),
+    .ch0b_ready(sdr_scpu_rdy),
+
+    .ch1_addr(sdr_obj_addr[24:1]), //16bit address
     .ch1_dout(sdr_obj_dout),
-    .ch1_req(sdr_obj_req),
+    .ch1_req(sdr_obj_req & ~DBG_SDR_REQ[2]),
     .ch1_ready(sdr_obj_rdy),
 
-    .ch2_addr(sdr_bg1_addr[24:1]),
+    .ch2_addr(sdr_bg1_addr[24:1]), //16bit address
     .ch2_dout(sdr_bg1_dout),
-    .ch2_req(sdr_bg1_req),
+    .ch2_req(sdr_bg1_req & ~DBG_SDR_REQ[0]),
     .ch2_ready(sdr_bg1_rdy),
 
-    // multiplexed with rom download and cpu read/writes
-    .ch3_addr(sdr_ch3_addr[24:1]),
+    .ch3_addr(sdr_ch3_addr[24:1]), //16bit address
     .ch3_din(sdr_ch3_din),
     .ch3_dout(sdr_bg2_dout),
     .ch3_be(sdr_ch3_be),
     .ch3_rnw(sdr_ch3_rnw),
     .ch3_req(sdr_ch3_req),
-    .ch3_ready(sdr_ch3_rdy)
+    .ch3_ready(sdr_ch3_rdy),
 );
 
 rom_loader rom_loader(
@@ -427,6 +453,7 @@ logic [3:0] VIDEO_4B;
 logic HBLANK_CORE, VBLANK_CORE;
 logic HSYNC_CORE, VSYNC_CORE;
 logic  HBlank, VBlank, HSync, VSync;
+logic  HSync2, VSync2;
 logic HSYNC, VSYNC;
 logic CSYNC;
 logic ce_pix;
@@ -458,6 +485,16 @@ XSleenaCore xlc (
 	
 	//Memory interface
 	//SDRAM
+    .sdr_mcpu_addr(sdr_mcpu_addr),
+    .sdr_mcpu_dout(sdr_mcpu_dout),
+    .sdr_mcpu_req(sdr_mcpu_req),
+    .sdr_mcpu_rdy(sdr_mcpu_rdy),
+
+    .sdr_scpu_addr(sdr_scpu_addr),
+    .sdr_scpu_dout(sdr_scpu_dout),
+    .sdr_scpu_req(sdr_scpu_req),
+    .sdr_scpu_rdy(sdr_scpu_rdy),
+
     .sdr_obj_addr(sdr_obj_addr),
     .sdr_obj_dout(sdr_obj_dout),
     .sdr_obj_req(sdr_obj_req),
@@ -468,10 +505,15 @@ XSleenaCore xlc (
     .sdr_bg1_req(sdr_bg1_req),
     .sdr_bg1_rdy(sdr_bg1_rdy),
 
-    .sdr_bg2_dout(sdr_bg2_dout),
     .sdr_bg2_addr(sdr_bg2_addr),
+    .sdr_bg2_dout(sdr_bg2_dout),
     .sdr_bg2_req(sdr_bg2_req),
     .sdr_bg2_rdy(sdr_bg2_rdy),
+
+    // .sdr_map_addr(sdr_map_addr),
+    // .sdr_map_dout(sdr_map_dout),
+    // .sdr_map_req(sdr_map_req),
+    // .sdr_map_rdy(sdr_map_rdy),
 
 	//BRAM
     .bram_addr(bram_addr),
@@ -508,8 +550,9 @@ end
 //Reverse polarity of blank/sync signals for MiSTer
 assign HBlank=  ~HBLANK_CORE;
 assign VBlank=  ~VBLANK_CORE;
-assign VSync =  ~VSYNC_CORE;
 assign HSync =   HSYNC_CORE;
+assign VSync =  ~VSYNC_CORE;
+
 
 assign CLK_VIDEO = MS_CLK;
 
@@ -519,44 +562,8 @@ XSleenaCore_RGB4bitLUT G_LUT( .COL_4BIT(VIDEO_4G), .COL_8BIT(G));
 XSleenaCore_RGB4bitLUT B_LUT( .COL_4BIT(VIDEO_4B), .COL_8BIT(B));
 
 // H/V offset
-wire [3:0]	hoffset = status[20:17];
-wire [3:0]	voffset = status[24:21];
-
-//jtframe_resync jtframe_resync
-//(
-//	.clk(CLK_VIDEO),
-//	.pxl_cen(ce_pix),
-//	.hs_in(HSYNC),
-//	.vs_in(VSYNC),
-//	.LVBL(VBlank),
-//	.LHBL(HBlank),
-//	.hoffset(hoffset),
-//	.voffset(voffset),
-//	.hs_out(HSync),
-//	.vs_out(VSync)
-//);
-
-// wire gamma_hsync, gamma_vsync, gamma_hblank, gamma_vblank;
-// wire [7:0] gamma_r, gamma_g, gamma_b;
-// gamma_fast video_gamma
-// (
-//     .clk_vid(CLK_VIDEO),
-//     .ce_pix(ce_pix),
-//     .gamma_bus(gamma_bus),
-//     .HSync(HSync),
-//     .VSync(VSync),
-//     .HBlank(HBlank),
-//     .VBlank(VBlank),
-//     .DE(),
-//     .RGB_in({R, G, B}),
-//     .HSync_out(gamma_hsync),
-//     .VSync_out(gamma_vsync),
-//     .HBlank_out(gamma_hblank),
-//     .VBlank_out(gamma_vblank),
-//     .DE_out(),
-//     .RGB_out({gamma_r, gamma_g, gamma_b})
-// );
-
+// wire [3:0]	hoffset = status[14:11];
+// wire [3:0]	voffset = status[18:15];
 
 assign VIDEO_ARX = (!ar) ? ( no_rotate ? 12'd4 : 12'd3 ) : (ar - 1'd1);
 assign VIDEO_ARY = (!ar) ? ( no_rotate ? 12'd3 : 12'd4 ) : 12'd0;
@@ -587,72 +594,7 @@ arcade_video #(256,24) arcade_video
 );
 
 screen_rotate screen_rotate(.*);
-/////////////////////////////////////////////////////////////////
-
-// wire VGA_DE_MIXER;
-// video_mixer #(256, 0, 0) video_mixer(
-//     .CLK_VIDEO(CLK_VIDEO),
-//     .CE_PIXEL(CE_PIXEL),
-//     .ce_pix(ce_pix),
-
-//     .scandoubler(forced_scandoubler || scandoubler_fx != 2'b00),
-//     .hq2x(0),
-
-//     .gamma_bus(),
-
-//     .R(gamma_r),
-//     .G(gamma_g),
-//     .B(gamma_b),
-
-//     .HBlank(gamma_hblank),
-//     .VBlank(gamma_vblank),
-//     .HSync(gamma_hsync),
-//     .VSync(gamma_vsync),
-
-//     .VGA_R(VGA_R),
-//     .VGA_G(VGA_G),
-//     .VGA_B(VGA_B),
-//     .VGA_VS(VGA_VS),
-//     .VGA_HS(VGA_HS),
-//     .VGA_DE(VGA_DE_MIXER),
-
-//     .HDMI_FREEZE(HDMI_FREEZE)
-// );
-
-
-// video_freak video_freak(
-//     .CLK_VIDEO(CLK_VIDEO),
-//     .CE_PIXEL(CE_PIXEL),
-//     .VGA_VS(VGA_VS),
-//     .HDMI_WIDTH(HDMI_WIDTH),
-//     .HDMI_HEIGHT(HDMI_HEIGHT),
-//     .VGA_DE(VGA_DE),
-//     .VIDEO_ARX(VIDEO_ARX),
-//     .VIDEO_ARY(VIDEO_ARY),
-
-//     .VGA_DE_IN(VGA_DE_MIXER),
-//     .ARX((!ar) ? ( no_rotate ? 12'd4 : 12'd3 ) : (ar - 1'd1)),
-//     .ARY((!ar) ? ( no_rotate ? 12'd3 : 12'd4 ) : 12'd0),
-//     .CROP_SIZE(crop_240p ? 240 : 0),
-//     .CROP_OFF(crop_offset),
-//     .SCALE(scale)
-// );
-
-// assign VGA_R = R8B;
-// assign VGA_G = G8B;
-// assign VGA_B = B8B;
-//  assign VGA_HS = HSYNC;
-//  assign VGA_VS = VSYNC;
-//  assign VGA_DE =  ~(VBLANK | HBLANK); //active low
-//  assign CE_PIXEL = ce_pix;
-
-
-
 //////////////////////////////////////////////////////////////////
-
-
-//////////////////////////////////////////////////////////////////
-
 
 ///////////////////         Keyboard           //////////////////
 
@@ -694,6 +636,54 @@ always @(posedge MS_CLK) begin
 end
 
 //////////////////////// GAME INPUTS ////////////////////////////
+wire [15:0] joy = joystick_0 | joystick_1;
+
+//SNAC joysticks
+wire [15:0] SNAC_joy = JOY_DB1 | JOY_DB2;
+wire [1:0] SNAC_dev;
+assign SNAC_dev =  status[23:22];
+wire         JOY_CLK, JOY_LOAD;
+wire         JOY_DATA  = USER_IN[5];
+
+always_comb begin
+	USER_OUT[0] = JOY_LOAD;
+	USER_OUT[1] = JOY_CLK;
+	USER_OUT[2] = 1'b1;
+	USER_OUT[3] = 1'b1;
+	USER_OUT[4] = 1'b1;
+	USER_OUT[5] = 1'b1;
+	USER_OUT[6] = 1'b1;
+end
+
+wire [15:0] JOYDB15_1,JOYDB15_2;
+joy_db15 joy_db15
+(
+  .clk       ( MS_CLK  ), //53.6MHz
+  .JOY_CLK   ( JOY_CLK   ),
+  .JOY_DATA  ( JOY_DATA  ),
+  .JOY_LOAD  ( JOY_LOAD  ),
+  .joystick1 ( JOYDB15_1 ),
+  .joystick2 ( JOYDB15_2 )	  
+);
+
+wire [15:0] JOY_DB1;
+wire [15:0] JOY_DB2;
+always_comb begin
+	if ((SNAC_dev[0])) begin
+		JOY_DB1 = JOYDB15_1;
+	end else begin
+		JOY_DB1 = 16'h00;
+	end
+end
+
+always_comb begin
+	if ((SNAC_dev[1])) begin
+		JOY_DB2 = JOYDB15_2;
+	end else begin
+		JOY_DB2 = 16'h00;
+	end
+end
+
 //////// Game inputs, the same controls are used for two player alternate gameplay ////////
 //Dip Switches
 // 8 dip switches of 8 bits
@@ -725,7 +715,7 @@ wire m_left1;
 wire m_right1;
 wire m_SW1_1;
 wire m_SW2_1;
-wire m_start1;
+logic m_start1;
 
 //Player 2
 wire m_up2;
@@ -734,35 +724,58 @@ wire m_left2;
 wire m_right2;
 wire m_SW1_2;
 wire m_SW2_2;
-wire m_start2;
+logic m_start2;
 
-wire m_coin1, m_coin2;
-wire m_pause; //active high
+logic m_coin1, m_coin2;
+logic m_pause; //active high
 
 //Xain'd Sleena uses only one set of game controls and 2 start buttons that are needed for play a continue
 //wire [15:0] joy = joystick_0 | joystick_1;
 
-assign m_up1       = ~btn_up    & ~joystick_0[3];
-assign m_down1     = ~btn_down  & ~joystick_0[2];
-assign m_left1     = ~btn_left  & ~joystick_0[1];
-assign m_right1    = ~btn_right & ~joystick_0[0];
-assign m_SW1_1     = ~btn_1     & ~joystick_0[4];  
-assign m_SW2_1     = ~btn_2     & ~joystick_0[5]; 
+// assign m_up1       = (SNAC_dev[0]) ? ~JOY_DB1[3]  : ~btn_up    & ~joystick_0[3];
+// assign m_down1     = (SNAC_dev[0]) ? ~JOY_DB1[2]  : ~btn_down  & ~joystick_0[2];
+// assign m_left1     = (SNAC_dev[0]) ? ~JOY_DB1[1]  : ~btn_left  & ~joystick_0[1];
+// assign m_right1    = (SNAC_dev[0]) ? ~JOY_DB1[0]  : ~btn_right & ~joystick_0[0];
+// assign m_SW1_1     = (SNAC_dev[0]) ? ~JOY_DB1[4]  : ~btn_1     & ~joystick_0[4];  //joy1 btn A
+// assign m_SW2_1     = (SNAC_dev[0]) ? ~JOY_DB1[5]  : ~btn_2     & ~joystick_0[5];  //joy1 btn B
 
-assign m_up2       = ~btn_up    & ~joystick_1[3];
-assign m_down2     = ~btn_down  & ~joystick_1[2];
-assign m_left2     = ~btn_left  & ~joystick_1[1];
-assign m_right2    = ~btn_right & ~joystick_1[0];
-assign m_SW1_2     = ~btn_1     & ~joystick_1[4];  
-assign m_SW2_2     = ~btn_2     & ~joystick_1[5]; 
+// assign m_up2       = (SNAC_dev[1]) ? ~JOY_DB2[3]  : ~btn_up    & ~joystick_1[3];
+// assign m_down2     = (SNAC_dev[1]) ? ~JOY_DB2[2]  : ~btn_down  & ~joystick_1[2];
+// assign m_left2     = (SNAC_dev[1]) ? ~JOY_DB2[1]  : ~btn_left  & ~joystick_1[1];
+// assign m_right2    = (SNAC_dev[1]) ? ~JOY_DB2[0]  : ~btn_right & ~joystick_1[0];
+// assign m_SW1_2     = (SNAC_dev[1]) ? ~JOY_DB2[4]  : ~btn_1     & ~joystick_1[4];  //joy2 btn A
+// assign m_SW2_2     = (SNAC_dev[1]) ? ~JOY_DB2[5]  : ~btn_2     & ~joystick_1[5];  //joy2 btn B
+assign m_up1       = ~JOY_DB1[3]  & ~btn_up    & ~joystick_0[3];
+assign m_down1     = ~JOY_DB1[2]  & ~btn_down  & ~joystick_0[2];
+assign m_left1     = ~JOY_DB1[1]  & ~btn_left  & ~joystick_0[1];
+assign m_right1    = ~JOY_DB1[0]  & ~btn_right & ~joystick_0[0];
+assign m_SW1_1     = ~JOY_DB1[4]  & ~btn_1     & ~joystick_0[4];  //joy1 btn A
+assign m_SW2_1     = ~JOY_DB1[5]  & ~btn_2     & ~joystick_0[5];  //joy1 btn B
 
+assign m_up2       = ~JOY_DB2[3]  & ~btn_up    & ~joystick_1[3];
+assign m_down2     = ~JOY_DB2[2]  & ~btn_down  & ~joystick_1[2];
+assign m_left2     = ~JOY_DB2[1]  & ~btn_left  & ~joystick_1[1];
+assign m_right2    = ~JOY_DB2[0]  & ~btn_right & ~joystick_1[0];
+assign m_SW1_2     = ~JOY_DB2[4]  & ~btn_1     & ~joystick_1[4];  //joy2 btn A
+assign m_SW2_2     = ~JOY_DB2[5]  & ~btn_2     & ~joystick_1[5];  //joy2 btn B
 // 4     5      6      7       8     9
 //Shot,Jump,Start P1,Coin,Start P2,Pause
-assign m_start1    = ~btn_1p_start & ~joy[6]; 
-assign m_start2    = ~btn_2p_start & ~joy[8];
-assign m_coin1     = ~btn_coin1    & ~joystick_0[7];  
-assign m_coin2     = ~btn_coin2    & ~joystick_1[7];  
-assign m_pause     =  btn_pause    |  joy[9]; //active high
+
+//SNAC: switch1 A, switch2 B, pause START+A, P2 Start (from P1 controls) START+B
+// always @(posedge MS_CLK) begin
+// 	m_start1    <= (SNAC_dev[0]) ? ~JOY_DB1[10]  : ~btn_1p_start & ~joy[6]; 
+// 	m_start2    <= (SNAC_dev[0] | SNAC_dev[1]) ? ~((SNAC_dev[1] & JOY_DB2[10]) | (SNAC_dev[0] & JOY_DB1[5] & JOY_DB1[10]))   : ~btn_2p_start & ~joy[8]; //SNAC Select+B
+// 	m_coin1     <= (SNAC_dev[0]) ? ~JOY_DB1[11]  : ~btn_coin1    & ~joystick_0[7];  //SNAC Select
+// 	m_coin2     <= (SNAC_dev[1]) ? ~JOY_DB2[11]  : ~btn_coin2    & ~joystick_1[7];  
+// 	m_pause     <= (SNAC_dev[0] || SNAC_dev[1]) ? (JOY_DB1[4] & JOY_DB1[10])|(JOY_DB2[4] & JOY_DB2[10]) : btn_pause    |  joy[9]; //active high //SNAC Select+A
+// end
+
+assign m_start1 = ~JOY_DB1[10] & ~btn_1p_start & ~joy[6]; 
+assign m_start2 = ~((JOY_DB2[10]) | (JOY_DB1[6])) & ~btn_2p_start & ~joy[8]; //SNAC P1 button C, P2 Start
+assign m_coin1  = ~JOY_DB1[11] & ~btn_coin1    & ~joystick_0[7]; 
+assign m_coin2  = ~JOY_DB2[11] & ~btn_coin2    & ~joystick_1[7];  
+assign m_pause  = (JOY_DB1[4] & JOY_DB1[10]) | (JOY_DB2[4] & JOY_DB2[10]) | btn_pause    |  joy[9]; //active high //SNAC Start+A
+
 
 logic [7:0] PLAYER1, PLAYER2;
 logic SERVICE;

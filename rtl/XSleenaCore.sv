@@ -9,7 +9,7 @@
 //
 //  This program is distributed in the hope that it will be useful, but WITHOUT
 //  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-//  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+//  FITNESS FOR A PARSTnRTICULAR PURPOSE.  See the GNU General Public License for
 //  more details.
 //
 //  You should have received a copy of the GNU General Public License along
@@ -51,6 +51,16 @@ module XSleenaCore (
 	output logic VSYNC,
 
 	//Memory interface
+    output [24:0] sdr_mcpu_addr,
+    input [15:0] sdr_mcpu_dout,
+    output sdr_mcpu_req,
+    input sdr_mcpu_rdy,
+
+    output [24:0] sdr_scpu_addr,
+    input [15:0] sdr_scpu_dout,
+    output sdr_scpu_req,
+    input sdr_scpu_rdy,
+
     output [24:0] sdr_obj_addr,
     input [15:0] sdr_obj_dout,
     output sdr_obj_req,
@@ -65,6 +75,11 @@ module XSleenaCore (
     input [15:0] sdr_bg2_dout,
     output sdr_bg2_req,
     input sdr_bg2_rdy,
+
+    // output [24:0] sdr_map_addr,
+    // input [15:0] sdr_map_dout,
+    // output sdr_map_req,
+    // input sdr_map_rdy,
 
     input bram_wr,
     input [7:0] bram_data,
@@ -154,13 +169,13 @@ module XSleenaCore (
 	//Using 12.545040 system clock, you get 60.05fps
 	//WC=13 master clock: 60MHz, system clock:12.545040 n=824,  m=3941  / 12MHz n=1, m=5
 	//WC=13 master clock: 48MHz, system clock:12.545040 n=1030, m=3941 / 12MHz n=1, m=4
-
+	//WC=11 master clock: 48MHz, system clock:12.545040 n=351, m=1343 / 12MHz n=1, m=4
 	//WC=11 master clock: 60MHz, system clock:12.545027 n=267,  m=1277  / 12MHz n=1, m=5
 	jtframe_frac_cen #(.WC(11), .W(2)) xs_clkcen
 	(
 		.clk(CLK),
-		.n(NATIVE_VFREQ ? 11'd1 : 11'd267),
-		.m(NATIVE_VFREQ ? 11'd5 : 11'd1277),
+		.n(NATIVE_VFREQ ? 11'd1 : 11'd351),
+		.m(NATIVE_VFREQ ? 11'd4 : 11'd1343),
 		.cen({HCLK_CEN, CLK12_CEN})
 	);
 
@@ -186,11 +201,10 @@ module XSleenaCore (
 
 	logic W3A00n, W3A01n, W3A02n, W3A03n;
 	assign {W3A03n, W3A02n, W3A01n, W3A00n} = IOWDn;
-    logic [14:0] AB; //shared address bus
+    logic [15:0] AB; //shared address bus
     logic [7:0] DB_in, DB_out; //shared data bus
 	logic RW;
 	logic WDn;
-	
 
 	//  --------------------------
 	// |       BOTTOM BOARD       |
@@ -254,7 +268,6 @@ module XSleenaCore (
         .OBCH(OBCH)
 	);
 
-
 	//MiSTer Video signals
 	//
 	//HSYNC
@@ -305,6 +318,8 @@ module XSleenaCore (
 	logic [6:0] MAPCOL;
 	XSleenaCore_MAP xs_map(
 		.clk(CLK),
+		//.clk_ram(SDR_CLK),
+		//.RSTn(RSTn),
 		.HN(HN),
 		.M4Hn(M4Hn),
 		.AB(AB[10:0]),
@@ -320,11 +335,18 @@ module XSleenaCore (
 		.HCLKn(HCLKn), //HCLK2n
 		.P1_P2n(P1_P2n),
 		.MAP(MAPCOL),
+		//SDRAM ROM interface
+		// .sdr_addr(sdr_map_addr),
+		// .sdr_req(sdr_map_req),
+		// .sdr_rdy(sdr_map_rdy),
+		// .sdr_data(sdr_map_dout),
 		//ROM interface
 		.bram_wr(bram_wr),
 		.bram_data(bram_data),
 		.bram_addr(bram_addr),
-		.bram_cs(bram_cs[3])
+		.bram_cs(bram_cs[3]),
+		//greetings interface
+		.show_kofi(pause_rq)
 	);
 
 	//Schematics pages: 3A,4A,5A,6A
@@ -393,6 +415,7 @@ module XSleenaCore (
 	//Schematics pages: 1B,2B 
     XSleenaCore_cpuA_B xs_cpuAB( 
 		.clk(CLK),
+		.clk_ram(SDR_CLK),
 		.clk12M_cen(CLK12_CEN),
   	    .RSTn(RSTn),
 		.VBLK(VBLK),
@@ -419,11 +442,16 @@ module XSleenaCore (
         .IOn(IOn),
         .PLSELn(PLSELn),
         .WDn(WDn),
-		//ROM interface
-		.bram_wr(bram_wr),
-		.bram_data(bram_data),
-		.bram_addr(bram_addr),
-		.bram_cs(bram_cs[1:0]), //MAIN+SUB CPUs ROM CODE
+		//SDRAM ROM interface
+		.sdr_addr_a(sdr_mcpu_addr),
+		.sdr_req_a(sdr_mcpu_req),
+		.sdr_rdy_a(sdr_mcpu_rdy),
+		.sdr_data_a(sdr_mcpu_dout),
+		.sdr_addr_b(sdr_scpu_addr),
+		.sdr_req_b(sdr_scpu_req),
+		.sdr_rdy_b(sdr_scpu_rdy),
+		.sdr_data_b(sdr_scpu_dout),
+		//pause
 		.pause_rq(pause_rq)
     );
 
@@ -550,7 +578,7 @@ module XSleenaCore (
 		.bram_wr(bram_wr),
 		.bram_data(bram_data),
 		.bram_addr(bram_addr),
-		.bram_cs(bram_cs[4]) //MAIN+SUB CPUs ROM CODE
+		.bram_cs(bram_cs[4])
 	);
 	
 	//Schematics pages: 7,8B
