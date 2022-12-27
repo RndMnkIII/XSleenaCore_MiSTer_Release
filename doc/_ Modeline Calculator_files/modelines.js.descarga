@@ -1,0 +1,488 @@
+
+/* Copyright (c) 2008, Paul Lutus
+ * Released under the GPL
+
+ * This JavaScript program is largely based on:
+ * -------------------------------------------------------------
+ * gtf.c  Generate mode timings using the GTF Timing Standard
+ *
+ * Copyright (c) 2001, Andy Ritger  aritger@nvidia.com
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * o Redistributions of source code must retain the above copyright
+ *   notice, this list of conditions and the following disclaimer.
+ * o Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer
+ *   in the documentation and/or other materials provided with the
+ *   distribution.
+ * o Neither the name of NVIDIA nor the names of its contributors
+ *   may be used to endorse or promote products derived from this
+ *   software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+ * NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ * THE REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+// Utility function to add an event listener
+function addEvent(o,e,f) {
+  if (o.addEventListener){
+    o.addEventListener(e,f,false);
+    return true;
+  }
+  else if (o.attachEvent){
+    return o.attachEvent("on"+e,f);
+  }
+  else {
+    return false;
+  }
+}
+
+addEvent(window,"load",compute);
+
+// class Mode
+
+function Mode() {
+  this.hr
+  this.hss
+  this.hse
+  this.hbl
+  this.hfl
+  this.vr
+  this.vbase
+  this.vss
+  this.vse
+  this.vfl
+  this.pclk
+  this.h_freq
+  this.v_freq
+  this.interlace
+  this.interlaced
+}
+
+// class Options
+
+function Options() {
+  this.x
+  this.y
+  this.v_freq
+  this.xf86mode = true
+  this.margins = false
+  this.interlaced = false
+}
+
+function process_key(e) {
+  var key = e.keyCode || e.which
+  if (key == 13) {
+    compute()
+  }
+}
+
+// constants from GTF specification
+var MARGIN_PERCENT    = 1.8   // % of active vertical image
+var CELL_GRAN         = 8.0   // assumed character cell granularity
+var MIN_PORCH         = 1     // minimum front porch
+var V_SYNC_RQD        = 3     // width of vsync in lines
+var H_SYNC_PERCENT    = 8.0   // width of hsync as % of total line
+var MIN_VSYNC_PLUS_BP = 550.0 // min time of vsync + back porch (microsec)
+var M                 = 600.0 // blanking formula gradient
+var C                 = 40.0  // blanking formula offset
+var K                 = 128.0 // blanking formula scaling factor
+var J                 = 20.0  // blanking formula scaling factor
+var verbose = false
+var detail_string = ""
+
+// imitate the effect of "rint()" from the math.c library
+function rint(v) {
+  return ((Math.floor(v+0.5)) + 0.0)
+}
+
+function print_verbose(n, name, val) {
+  if (verbose) {
+    n = "" + n
+    val = "" + val.toFixed(6)
+    detail_string += pad_string(n,2,true) + ": " + pad_string(name,27,false) + " : " + pad_string(val,12,true) + "\n"
+  }
+  return ""
+}
+
+function pad_string(s,n,front) {
+  while(n > s.length) {
+    s = (front)?" " + s:s + " "
+  }
+  return s;
+}
+
+function print_xf86_mode (m) {
+  s_int1 = (m.interlaced)?"i":""
+  s_int2 = (m.interlaced)?" interlace":""
+  var output = ""
+  
+  // line 1
+  output += "# "
+  output += m.hr
+  output += "x"
+  output += m.vbase
+  output += " @ "
+  output += m.v_freq.toFixed(2)
+  output += " Hz (GTF) hsync: "
+  output += m.h_freq.toFixed(2)
+  output += " kHz; pclk: "
+  output += m.pclk.toFixed(2)
+  output += " MHz\n"
+  
+  // line 2
+  output += "Modeline \""
+  output += m.hr
+  output += "x"
+  output += m.vbase
+  output += "_"
+  output += m.v_freq.toFixed(2) + s_int1
+  output += "\" "
+  output += m.pclk.toFixed(2)
+  output += " "
+  output += m.hr + " "
+  output += m.hss + " "
+  output += m.hse + " "
+  output += m.hfl + " "
+  output += m.vr + " "
+  output += m.vss + " "
+  output += m.vse + " "
+  output += m.vfl + " -HSync +Vsync"
+  output += s_int2
+  
+  return output
+}
+function print_fb_mode (m) {
+  output = ""
+  output += "mode \""
+  output += m.hr
+  output += "x"
+  output += m.vr
+  output += " "
+  output += m.v_freq
+  output += "Hz 32bit (GTF)\"\n"
+  output += "    # PCLK: "
+  output += m.pclk.toFixed(2)
+  output += " MHz, H: "
+  output += m.h_freq.toFixed(2)
+  output += " kHz, V: "
+  output += m.v_freq.toFixed(2)
+  output += " Hz\n"
+  output += "    geometry "
+  output += m.hr + " "
+  output += m.vr + " "
+  output += m.hr + " "
+  output += m.vr + " 32\n"
+  output += "    timings "
+  output += rint(1000000.0/m.pclk) + " "
+  output += (m.hfl - m.hse) + " "
+  output += (m.hss - m.hr) + " "
+  output += (m.vfl - m.vse) + " "
+  output += (m.vss - m.vr) + " "
+  output += (m.hse - m.hss) + " "
+  output += (m.vse - m.vss) + "\n"
+  
+  output += "    hsync low\n"
+  output += "    vsync high\n"
+  if(m.interlaced) {
+    output += "    laced true\n"
+  }
+  output += "endmode"
+  return output
+}
+function comp_stage_1(options) {
+  /*  1. In order to give correct results, the number of horizontal
+   *  pixels requested is first processed to ensure that it is divisible
+   *  by the character size, by rounding it to the nearest character
+   *  cell boundary:
+   *
+   *  [H PIXELS RND] = ((ROUND([H PIXELS]/[CELL GRAN RND],0))*[CELLGRAN RND])
+   */
+  h_pixels_rnd = rint(options.x / CELL_GRAN) * CELL_GRAN
+  print_verbose(1, "[H PIXELS RND]", h_pixels_rnd)
+  /*  2. If interlace is requested, the number of vertical lines assumed
+   *  by the calculation must be halved, as the computation calculates
+   *  the number of vertical lines per field. In either case, the
+   *  number of lines is rounded to the nearest integer.
+   *
+   *  [V LINES RND] = IF([INT RQD?]="y", ROUND([V LINES]/2,0),
+   *                                     ROUND([V LINES],0))
+   */
+  v_lines_rnd = (options.interlaced)?
+  rint(options.y) / 2.0 :
+  rint(options.y);
+  print_verbose(2, "[V LINES RND]", v_lines_rnd);
+  /*  3. Find the frame rate required:
+   *
+   *  [V FIELD RATE RQD] = IF([INT RQD?]="y", [I/P FREQ RQD]*2,
+   *                                          [I/P FREQ RQD])
+   */
+  v_field_rate_rqd = (options.interlaced)? (options.v_freq * 2.0) : (options.v_freq);
+  print_verbose(3, "[V FIELD RATE RQD]", v_field_rate_rqd);
+  /*  4. Find number of lines in Top margin:
+   *
+   *  [TOP MARGIN (LINES)] = IF([MARGINS RQD?]="Y",
+   *          ROUND(([MARGIN%]/100*[V LINES RND]),0),
+   *          0)
+   */
+  top_margin = (options.margins)? rint(MARGIN_PERCENT / 100.0 * v_lines_rnd) : (0.0);
+  print_verbose(4, "[TOP MARGIN (LINES)]", top_margin);
+  /*  5. Find number of lines in Bottom margin:
+   *
+   *  [BOT MARGIN (LINES)] = IF([MARGINS RQD?]="Y",
+   *          ROUND(([MARGIN%]/100*[V LINES RND]),0),
+   *          0)
+   */
+  bottom_margin = (options.margins)? rint(MARGIN_PERCENT/100.0 * v_lines_rnd) : (0.0)
+  print_verbose(5, "[BOT MARGIN (LINES)]", bottom_margin);
+  /*  6. If interlace is required, then set variable [INTERLACE]=0.5:
+   *
+   *  [INTERLACE]=(IF([INT RQD?]="y",0.5,0))
+   */
+  interlace = (options.interlaced)? 0.5 : 0.0;
+  print_verbose(6, "[INTERLACE]", interlace);
+  /*  7. Estimate the Horizontal period
+   *
+   *  [H PERIOD EST] = ((1/[V FIELD RATE RQD]) - [MIN VSYNC+BP]/1000000) /
+   *                    ([V LINES RND] + (2*[TOP MARGIN (LINES)]) +
+   *                     [MIN PORCH RND]+[INTERLACE]) * 1000000
+   */
+  h_period_est = (((1.0/v_field_rate_rqd) - (MIN_VSYNC_PLUS_BP/1000000.0)) /
+  (v_lines_rnd + (2*top_margin) + MIN_PORCH + interlace) * 1000000.0)
+  print_verbose(7, "[H PERIOD EST]", h_period_est);
+  /*  8. Find the number of lines in V sync + back porch:
+   *
+   *  [V SYNC+BP] = ROUND(([MIN VSYNC+BP]/[H PERIOD EST]),0)
+   */
+  vsync_plus_bp = rint(MIN_VSYNC_PLUS_BP/h_period_est);
+  print_verbose(8, "[V SYNC+BP]", vsync_plus_bp);
+  /*  9. Find the number of lines in V back porch alone:
+   *
+   *  [V BACK PORCH] = [V SYNC+BP] - [V SYNC RND]
+   *
+   *  XXX is "[V SYNC RND]" a typo? should be [V SYNC RQD]?
+   */
+  v_back_porch = vsync_plus_bp - V_SYNC_RQD;
+  print_verbose(9, "[V BACK PORCH]", v_back_porch);
+  /*  10. Find the total number of lines in Vertical field period:
+   *
+   *  [TOTAL V LINES] = [V LINES RND] + [TOP MARGIN (LINES)] +
+   *                    [BOT MARGIN (LINES)] + [V SYNC+BP] + [INTERLACE] +
+   *                    [MIN PORCH RND]
+   */
+  total_v_lines = v_lines_rnd + top_margin + bottom_margin + vsync_plus_bp +
+  interlace + MIN_PORCH;
+  print_verbose(10, "[TOTAL V LINES]", total_v_lines);
+  /*  11. Estimate the Vertical field frequency:
+   *
+   *  [V FIELD RATE EST] = 1 / [H PERIOD EST] / [TOTAL V LINES] * 1000000
+   */
+  v_field_rate_est = 1.0 / h_period_est / total_v_lines * 1000000.0;
+  print_verbose(11, "[V FIELD RATE EST]", v_field_rate_est);
+  /*  12. Find the actual horizontal period:
+   *
+   *  [H PERIOD] = [H PERIOD EST] / ([V FIELD RATE RQD] / [V FIELD RATE EST])
+   */
+  h_period = h_period_est / (v_field_rate_rqd / v_field_rate_est);
+  print_verbose(12, "[H PERIOD]", h_period);
+  /*  13. Find the actual Vertical field frequency:
+   *
+   *  [V FIELD RATE] = 1 / [H PERIOD] / [TOTAL V LINES] * 1000000
+   */
+  v_field_rate = 1.0 / h_period / total_v_lines * 1000000.0;
+  print_verbose(13, "[V FIELD RATE]", v_field_rate);
+  /*  14. Find the Vertical frame frequency:
+   *
+   *  [V FRAME RATE] = (IF([INT RQD?]="y", [V FIELD RATE]/2, [V FIELD RATE]))
+   */
+  v_frame_rate = (options.interlaced)? v_field_rate / 2.0 : v_field_rate;
+  print_verbose(14, "[V FRAME RATE]", v_frame_rate);
+  /*  15. Find number of pixels in left margin:
+   *
+   *  [LEFT MARGIN (PIXELS)] = (IF( [MARGINS RQD?]="Y",
+   *          (ROUND( ([H PIXELS RND] * [MARGIN%] / 100 /
+   *                   [CELL GRAN RND]),0)) * [CELL GRAN RND],
+   *          0))
+   */
+  left_margin = (options.margins)?
+  rint(h_pixels_rnd * MARGIN_PERCENT / 100.0 / CELL_GRAN) * CELL_GRAN :
+  0.0;
+  print_verbose(15, "[LEFT MARGIN (PIXELS)]", left_margin);
+  /*  16. Find number of pixels in right margin:
+   *
+   *  [RIGHT MARGIN (PIXELS)] = (IF( [MARGINS RQD?]="Y",
+   *          (ROUND( ([H PIXELS RND] * [MARGIN%] / 100 /
+   *                   [CELL GRAN RND]),0)) * [CELL GRAN RND],
+   *          0))
+   */
+  right_margin = (options.margins)?
+  rint(h_pixels_rnd * MARGIN_PERCENT / 100.0 / CELL_GRAN) * CELL_GRAN :
+  0.0
+  print_verbose(16, "[RIGHT MARGIN (PIXELS)]", right_margin);
+  /*  17. Find total number of active pixels in image and left and right
+   *  margins:
+   *
+   *  [TOTAL ACTIVE PIXELS] = [H PIXELS RND] + [LEFT MARGIN (PIXELS)] +
+   *                          [RIGHT MARGIN (PIXELS)]
+   */
+  total_active_pixels = h_pixels_rnd + left_margin + right_margin;
+  print_verbose(17, "[TOTAL ACTIVE PIXELS]", total_active_pixels);
+  /*  18. Find the ideal blanking duty cycle from the blanking duty cycle
+   *  equation:
+   *
+   *  [IDEAL DUTY CYCLE] = [C'] - ([M']*[H PERIOD]/1000)
+   */
+  ideal_duty_cycle = (((C - J) * K/256.0) + J) - ((K/256.0 * M) * h_period / 1000.0);
+  print_verbose(18, "[IDEAL DUTY CYCLE]", ideal_duty_cycle);
+  /*  19. Find the number of pixels in the blanking time to the nearest
+   *  double character cell:
+   *
+   *  [H BLANK (PIXELS)] = (ROUND(([TOTAL ACTIVE PIXELS] *
+   *                               [IDEAL DUTY CYCLE] /
+   *                               (100-[IDEAL DUTY CYCLE]) /
+   *                               (2*[CELL GRAN RND])), 0))
+   *                       * (2*[CELL GRAN RND])
+   */
+  h_blank = rint(total_active_pixels *
+    ideal_duty_cycle /
+    (100.0 - ideal_duty_cycle) /
+  (2.0 * CELL_GRAN)) * (2.0 * CELL_GRAN);
+  print_verbose(19, "[H BLANK (PIXELS)]", h_blank);
+  /*  20. Find total number of pixels:
+   *
+   *  [TOTAL PIXELS] = [TOTAL ACTIVE PIXELS] + [H BLANK (PIXELS)]
+   */
+  total_pixels = total_active_pixels + h_blank;
+  print_verbose(20, "[TOTAL PIXELS]", total_pixels);
+  /*  21. Find pixel clock frequency:
+   *
+   *  [PIXEL FREQ] = [TOTAL PIXELS] / [H PERIOD]
+   */
+  pixel_freq = total_pixels / h_period;
+  print_verbose(21, "[PIXEL FREQ]", pixel_freq);
+  /*  22. Find horizontal frequency:
+   *
+   *  [H FREQ] = 1000 / [H PERIOD]
+   */
+  h_freq = 1000.0 / h_period;
+  print_verbose(22, "[H FREQ]", h_freq);
+  m = new Mode()
+  m.hr  = Math.floor(h_pixels_rnd)
+  m.hbl = Math.floor(h_blank)
+  m.hfl = Math.floor(total_pixels)
+  m.vr  = Math.floor(v_lines_rnd)
+  m.vbase = options.y
+  m.vfl = Math.floor(total_v_lines)
+  m.pclk   = pixel_freq
+  m.h_freq = h_freq
+  m.v_freq = options.v_freq
+  m.interlace = interlace // the value
+  m.interlaced = options.interlaced // the flag
+  return(m)
+} // comp_stage_1()
+
+function comp_stage_2(m) {
+  /*  17. Find the number of pixels in the horizontal sync period:
+   *
+   *  [H SYNC (PIXELS)] =(ROUND(([H SYNC%] / 100 * [TOTAL PIXELS] /
+   *                             [CELL GRAN RND]),0))*[CELL GRAN RND]
+   */
+  h_sync = rint(H_SYNC_PERCENT/100.0 * m.hfl / CELL_GRAN) * CELL_GRAN;
+  print_verbose(17, "[H SYNC (PIXELS)]", h_sync);
+  /*  18. Find the number of pixels in the horizontal front porch period:
+   *
+   *  [H FRONT PORCH (PIXELS)] = ([H BLANK (PIXELS)]/2)-[H SYNC (PIXELS)]
+   */
+  h_front_porch = (m.hbl / 2.0) - h_sync;
+  print_verbose(18, "[H FRONT PORCH (PIXELS)]", h_front_porch);
+  /*  36. Find the number of lines in the odd front porch period:
+   *
+   *  [V ODD FRONT PORCH(LINES)]=([MIN PORCH RND]+[INTERLACE])
+   */
+  v_odd_front_porch_lines = MIN_PORCH + m.interlace;
+  print_verbose(36, "[V ODD FRONT PORCH(LINES)]", v_odd_front_porch_lines)
+  m.hss = Math.floor(m.hr + h_front_porch)
+  m.hse = Math.floor(m.hr + h_front_porch + h_sync)
+  m.vss = Math.floor(m.vr + v_odd_front_porch_lines)
+  m.vse = Math.floor(m.vr + v_odd_front_porch_lines + V_SYNC_RQD)
+  
+  if(m.interlaced) {
+    m.vr *= 2;
+    m.vss *= 2;
+    m.vse *= 2;
+    m.vfl *= 2;
+  }
+  return(m)
+} // comp_stage_2()
+
+function usage() {
+  /* sprintf("\nusage: %s x y refresh [options]\n\n", __FILE__)
+  sprintf("Required arguments:\n")
+  sprintf("              x   : the desired horizontal resolution, pixels (example 640)\n")
+  sprintf("              y   : the desired vertical resolution, pixels (example 480)\n")
+  sprintf("        refresh   : the desired refresh rate, Hz (example 60)\n")
+  sprintf("Options:\n")
+  sprintf("  -m|--margins    : include standard image margins (#{MARGIN_PERCENT}%)\n")
+  sprintf("  -i|--interlaced : interlaced video mode\n")
+  sprintf("  -v|--verbose    : print all intermediate values\n")
+  sprintf("  -x|--xf86mode   : output an XFree86-style mode description (default)\n")
+   sprintf("  -f|--fbmode     : output an fbset(8)-style mode description\n\n") */
+}
+
+function parse_options() {
+  //if ARGV.size < 3 // not enough args
+  //   usage()
+  //   return false
+  //else # ARGV count valid
+  options = new Options()
+  options.x = parseInt(document.form1.x.value)
+  options.y = parseInt(document.form1.y.value)
+  options.v_freq = parseFloat(document.form1.v_freq.value)
+  options.xf86mode = !document.form1.fb_mode.checked
+  options.interlaced = document.form1.interlaced.checked
+  options.margins = document.form1.margin.checked
+  verbose = document.form1.details.checked
+  detail_string = ""
+  if(options.x <= 0 || options.y <= 0 || options.v_freq <= 0) {
+    options = 0
+  }
+  return options
+} // parse_options()
+
+function compute() {
+  if(options = parse_options()) {
+    m = comp_stage_1(options)
+    m = comp_stage_2(m)
+    if (options.xf86mode) {
+      document.form1.output.value = print_xf86_mode(m)
+    }
+    else {
+      document.form1.output.value = print_fb_mode(m)
+    }
+    document.form1.detailed_output.value = detail_string
+    db = document.getElementById("detail_block")
+    if(verbose) {
+      db.style.display = 'block'
+    }
+    else {
+      db.style.display = 'none'
+    }
+  } // if options valid
+  else {
+    document.form1.output.value = "One or more of the required entry values is out of range."
+  }
+} // compute()

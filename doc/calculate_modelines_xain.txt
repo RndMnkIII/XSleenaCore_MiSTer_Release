@@ -1,0 +1,25 @@
+dot-clock hdisp hsyncstart hsyncend htotal vdisp vsyncstart vsyncend vtotal [options]
+6.000 256 303 335 384 239 247 255 272
+
+hdisp = 256
+hsyncstart = hdisp + 47 = 303
+hsyncend = hsyncstart + 32 = 335
+htotal = hsyncend + 49 = 384
+
+vdisp = 239
+vsyncstart = vdisp + 8 = 247
+vsyncend = vsyncstart + 8 = 255
+vtotal = vsyncend + 17 = 272
+
+//conversion to MiSTer video_mode:
+https://morf77.pythonanywhere.com/
+
+Modeline values
+6.000 256 303 335 384 239 247 255 272
+
+video_mode=256,47,32,49,239,8,8,17,6000
+
+
+
+
+

@@ -40,12 +40,7 @@ module XSleenacore_VideoMixer (
 
   //MB7114 256BX4bits Priority PROM
   logic [3:0] ic59_D;
-  // ROM_sync #(.DATA_WIDTH(4), .ADDR_WIDTH(8), .DATA_HEX_FILE("pt-0.ic59_vmem.txt")) ic59 (
-	// 	.clk(clk),
-	// 	.Cen(1'b1), //active high
-	// 	.ADDR({1'b0,PRI[2:0],ic60b,ic60a,ic61b,ic61a}), 
-	// 	.DATA(ic59_D)
-	// );
+
 	//PORT0: ROM load interface
 	//PORT1: normal ROM access interface
 	SRAM_dual_sync #(.DATA_WIDTH(4), .ADDR_WIDTH(8)) ic59(
@@ -115,8 +110,7 @@ module XSleenacore_VideoMixer (
   //        17 D7, 16 D6, 15 D5, 14 D4, 13 D3, 11 D2, 10 D1, 9 D0
   //Only used 512 bytes
   logic [7:0] PLRAM_LSB_Din, PLRAM_LSB_Dout;
-  // SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(9), .DATA_HEX_FILE("xs_jungle_col1.bin_vmem.txt")) ic95(
-  SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(9), .DATA_HEX_FILE("xs_desert_col1.bin_vmem.txt")) ic95(
+  SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(9), .DATA_HEX_FILE("rnd512B.bin_vmem.txt")) ic95(
 		.clk(clk),
 		.ADDR(PLRAM_ADDR),
 		.DATA(PLRAM_LSB_Din),
@@ -129,8 +123,7 @@ module XSleenacore_VideoMixer (
   // Only used 512 bytes
   // Implemented as 9bit address x 8 bit data
   logic [7:0] PLRAM_MSB_Din, PLRAM_MSB_Dout;
-  // SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(9), .DATA_HEX_FILE("xs_jungle_col2.bin_vmem.txt")) ic94(
-     SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(9), .DATA_HEX_FILE("xs_desert_col2.bin_vmem.txt")) ic94(
+     SRAM_sync_init #(.DATA_WIDTH(8), .ADDR_WIDTH(9), .DATA_HEX_FILE("rnd512B.bin_vmem.txt")) ic94(
 		.clk(clk),
 		.ADDR(PLRAM_ADDR),
 		.DATA(PLRAM_MSB_Din),

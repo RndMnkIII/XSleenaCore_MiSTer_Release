@@ -1,0 +1,64 @@
+@import "article.css";
+@import "default.css";
+@import "roundcorner_16_parch.css";
+@import "dropshadow.css";
+
+select {
+  background-color: #d9ded5;
+}
+
+.article_wrapper {
+  display:block;
+  width:975px;
+  margin-left:auto;
+  margin-right:auto;
+}
+
+div.article_linklist_inverse blockquote a,div.article_linklist_inverse blockquote a:hover {
+  text-decoration:none;
+  text-decoration:none;
+}
+
+div.article_linklist_inverse,div.article_linklist_inverse a,div.article_linklist_inverse a:hover {
+  color: #000000;
+}
+
+div.article_linklist_inverse a:visited,div.article_linklist_inverse a:hover,div.article_linklist_inverse a:visited:hover {
+  color: #606060;
+}
+
+div.article_linklist_inverse a:hover,div.article_linklist_inverse a:visited:hover {
+  color: black;
+  background-color: #d9ded5;
+}
+
+/* external links */
+a,a:hover,a:visited,a:visited:hover {
+  color: #000000;
+}
+
+div a:visited:hover {
+  color:#606060;
+}
+
+/* external links */
+a:hover,a:visited:hover,a:hover img, a:visited:hover img {
+  /* background-color: #b5bead; */
+  background-color: #c0c0c0;
+}
+
+div a {
+  color: #000000;
+}
+
+div a:visited {
+  color: #606060;
+}
+
+/* internal links */
+div a:hover,div a:visited:hover {
+  /* background-color: #b5bead; */
+  /* background-color: #ffffd0; */
+  background-color: #e0e0e0;
+}
+

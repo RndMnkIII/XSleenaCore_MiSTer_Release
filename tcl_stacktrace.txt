@@ -1,0 +1,56 @@
+Fri Aug 12 10:47:17 CEST 2022
+Trace back: can't read "tbX(tbf17)": no such element in array
+    while executing
+"lappend orderx($tbX($tb)) $tb"
+    (object "::.dockbar" method "::mtiwidgets::Dockbar::redoPack" body line 34)
+    invoked from within
+"redoPack again"
+    ("eval" body line 1)
+    invoked from within
+"eval $args"
+    (object "::.dockbar" method "::mtiwidgets::Dockbar::_delayedEval" body line 3)
+    invoked from within
+"::.dockbar _delayedEval redoPack again"
+    (in namespace inscope "::mtiwidgets::Dockbar" script line 1)
+    invoked from within
+"namespace inscope ::mtiwidgets::Dockbar ::.dockbar _delayedEval redoPack again"
+    ("after" script)
+  <2:F:/questasim64_10.7c/win64/tk8.6/bgerror.tcl:106: ::tkerror {can't read "tbX(tbf17)": no such element in array}
+  <1:eval:1: ::tk::dialog::error::bgerror {can't read "tbX(tbf17)": no such element in array}
+Wed Oct 19 18:52:30 CEST 2022
+Trace back: invalid command name ""
+    while executing
+"{} idsToReferencePaths 1 {}"
+    ("uplevel" body line 1)
+    invoked from within
+"uplevel 1 [lrange $args 0 end-1] [lindex $args end]"
+    (procedure "applyToList" line 2)
+    invoked from within
+"applyToList $treeView idsToReferencePaths $useIds $top $expanded"
+    (procedure "_resetTree" line 29)
+    invoked from within
+"_resetTree $w"
+    (procedure "sort" line 6)
+    invoked from within
+"sort $w $col $dir"
+    (procedure "structsort" line 9)
+    invoked from within
+"structsort .main_pane.structure 0 ascending"
+    (in namespace inscope "::QStructure" script line 1)
+    invoked from within
+"namespace inscope ::QStructure {structsort .main_pane.structure} 0 ascending"
+    ("eval" body line 1)
+    invoked from within
+"eval $itk_option(-sortcommand) $column $dir"
+    (object "::.main_pane.structure.interior.cs.body.struct" method "::vsimwidgets::Hierarchy::sort" body line 26)
+    invoked from within
+"sort $sortIdx $dir"
+    (object "::.main_pane.structure.interior.cs.body.struct" method "::vsimwidgets::Hierarchy::_initializeSortColumn" body line 10)
+    invoked from within
+"::.main_pane.structure.interior.cs.body.struct _initializeSortColumn"
+    (in namespace inscope "::vsimwidgets::Hierarchy" script line 1)
+    invoked from within
+"namespace inscope ::vsimwidgets::Hierarchy {::.main_pane.structure.interior.cs.body.struct _initializeSortColumn}"
+    ("after" script)
+  <2:F:/questasim64_10.7c/win64/tk8.6/bgerror.tcl:106: ::tkerror {invalid command name ""}
+  <1:eval:1: ::tk::dialog::error::bgerror {invalid command name ""}

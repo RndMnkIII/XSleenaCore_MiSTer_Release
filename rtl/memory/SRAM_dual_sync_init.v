@@ -28,22 +28,18 @@ module SRAM_dual_sync_init #(parameter DATA_WIDTH = 8, ADDR_WIDTH = 10, DATA_HEX
     end
     
     always @(posedge clk0) begin
-        if (cen0) begin
-            Q0 <=  mem[ADDR0];
+        Q0 <=  mem[ADDR0];
 
-            if(we0) begin
-                mem[ADDR0] <= DATA0;
-            end
+        if(cen0 && we0) begin
+            mem[ADDR0] <= DATA0;
         end
     end
 
     always @(posedge clk1) begin
-        if (cen1) begin
-            Q1 <=  mem[ADDR1];
+        Q1 <=  mem[ADDR1];
 
-            if(we1) begin
-                mem[ADDR1] <= DATA1;
-            end
+        if(cen1 && we1) begin
+            mem[ADDR1] <= DATA1;
         end
     end
 endmodule
